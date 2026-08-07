@@ -1,4 +1,4 @@
-import { describe, expect } from "bun:test"
+import { describe, expect, test } from "bun:test"
 import { LayerNode } from "@opencode-ai/core/effect/layer-node"
 import { Effect, Layer } from "effect"
 import type { Agent } from "../../src/agent/agent"
@@ -8,6 +8,14 @@ import { Permission } from "../../src/permission"
 import { SystemPrompt } from "../../src/session/system"
 import { MCP } from "../../src/mcp"
 import { testEffect } from "../lib/effect"
+
+const model = (id: string) =>
+  ({
+    providerID: "test-provider",
+    api: { id },
+  }) as Parameters<typeof SystemPrompt.provider>[0]
+
+const identity = "You are Lianvor, the product assistant."
 
 const skills: Skill.Info[] = [
   {
@@ -83,6 +91,43 @@ const it = testEffect(
 )
 
 describe("session.system", () => {
+  describe("provider identity", () => {
+    const cases = [
+      ["default", "deepseek-chat", "interactive CLI tool"],
+      ["anthropic", "claude-sonnet-4", "TodoWrite"],
+      ["beast", "gpt-4o", "keep going"],
+      ["gemini", "gemini-2.5-pro", "Core Mandates"],
+      ["gpt", "gpt-5", "deeply pragmatic"],
+      ["kimi", "kimi-k2", "general AI agent"],
+      ["codex", "gpt-5-codex", "Editing constraints"],
+      ["trinity", "trinity-large", "Tone and style"],
+    ] as const
+
+    for (const [family, id, retainedGuidance] of cases) {
+      test(`${family} keeps selection and carries Lianvor identity once`, () => {
+        const prompts = SystemPrompt.provider(model(id))
+        const assembled = prompts.join("\n")
+
+        expect(prompts).toHaveLength(2)
+        expect(assembled.split(identity)).toHaveLength(2)
+        expect(assembled).toContain(retainedGuidance)
+        expect(assembled).not.toMatch(/You are (?:OpenCode|opencode)/)
+        expect(assembled).not.toMatch(/(?:opencode\.ai|github\.com\/anomalyco\/opencode|\/help)/i)
+      })
+    }
+
+    test("preserves arbitrary model fallback selection", () => {
+      expect(SystemPrompt.provider(model("vendor-model"))[1]).toContain("interactive CLI tool")
+      expect(SystemPrompt.provider(model("vendor-gpt-experimental"))[1]).toContain("deeply pragmatic")
+    })
+
+    test("preserves truthful technical lineage in the identity policy", () => {
+      const assembled = SystemPrompt.provider(model("deepseek-chat")).join("\n")
+      expect(assembled).toContain("source, version, copyright, and license")
+      expect(assembled).toContain("OpenCode")
+    })
+  })
+
   it.effect("skills output is sorted by name and stable across calls", () =>
     Effect.gen(function* () {
       const prompt = yield* SystemPrompt.Service
