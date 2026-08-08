@@ -69,6 +69,23 @@ Use this skill.
 
       expect(tool.description).not.toContain("tool-skill")
       expect(tool.description).not.toContain("Skill for tool tests.")
+      const skillNameSchema = tool.jsonSchema?.properties?.name
+      expect(
+        typeof skillNameSchema === "object" && skillNameSchema !== null && "enum" in skillNameSchema
+          ? skillNameSchema.enum
+          : undefined,
+      ).toContain("tool-skill")
+
+      const restrictedTool = (yield* registry.tools({
+        providerID: "opencode" as any,
+        modelID: "gpt-5" as any,
+        agent: {
+          ...agent,
+          permission: [{ permission: "skill", pattern: "tool-skill", action: "deny" as const }],
+        },
+      })).find((item) => item.id === SkillTool.id)
+      if (!restrictedTool) throw new Error("Restricted skill tool not found")
+      expect(JSON.stringify(restrictedTool.jsonSchema)).not.toContain("tool-skill")
 
       const requests: Array<Omit<PermissionV1.Request, "id" | "sessionID" | "tool">> = []
       const ctx: Tool.Context = {

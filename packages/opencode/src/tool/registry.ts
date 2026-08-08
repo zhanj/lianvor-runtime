@@ -105,6 +105,7 @@ const layer = Layer.effect(
     const patchtool = yield* ApplyPatchTool
     const skilltool = yield* SkillTool
     const agent = yield* Agent.Service
+    const skill = yield* Skill.Service
 
     const state = yield* InstanceState.make<State>(
       Effect.fn("ToolRegistry.state")(function* (ctx) {
@@ -284,6 +285,24 @@ const layer = Layer.effect(
             description: tool.description,
             parameters: tool.parameters,
             jsonSchema: tool.jsonSchema,
+          }
+          if (tool.id === SkillTool.id) {
+            const availableSkills = yield* skill.available(input.agent)
+            const names = availableSkills.map((item) => item.name).toSorted()
+            if (names.length > 0) {
+              output.jsonSchema = {
+                type: "object",
+                properties: {
+                  name: {
+                    type: "string",
+                    description: "The name of the skill from available_skills",
+                    enum: names,
+                  },
+                },
+                required: ["name"],
+                additionalProperties: false,
+              }
+            }
           }
           yield* plugin.trigger("tool.definition", { toolID: tool.id }, output)
           const jsonSchema =
