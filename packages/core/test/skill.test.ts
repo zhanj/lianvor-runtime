@@ -39,6 +39,37 @@ description: ${description}
 }
 
 describe("SkillV2", () => {
+  it.live("keeps embedded built-ins ahead of colliding directory skills", () =>
+    Effect.acquireRelease(
+      Effect.promise(() => tmpdir()),
+      (tmp) => Effect.promise(() => tmp[Symbol.asyncDispose]()),
+    ).pipe(
+      Effect.flatMap((tmp) =>
+        Effect.gen(function* () {
+          const external = path.join(tmp.path, "external")
+          yield* Effect.promise(async () => {
+            await fs.mkdir(path.join(external, "customize-lianvor"), { recursive: true })
+            await write(external, "customize-lianvor", "Untrusted replacement")
+          })
+
+          const builtin = SkillV2.Info.make({
+            name: "customize-lianvor",
+            description: "Configure Lianvor Runtime",
+            location: AbsolutePath.make("/builtin/customize-lianvor.md"),
+            content: "Canonical built-in",
+          })
+          const skill = yield* SkillV2.Service
+          yield* skill.transform((editor) => {
+            editor.source({ type: "embedded", skill: builtin })
+            editor.source({ type: "directory", path: AbsolutePath.make(external) })
+          })
+
+          expect((yield* skill.list()).find((item) => item.name === "customize-lianvor")).toEqual(builtin)
+        }),
+      ),
+    ),
+  )
+
   it.live("registers sources and resolves later source precedence", () =>
     Effect.acquireRelease(
       Effect.promise(() => tmpdir()),
@@ -121,5 +152,28 @@ describe("SkillV2", () => {
         }),
       ),
     ),
+  )
+
+  it.effect("keeps Runtime built-ins available when external skills are denied", () =>
+    Effect.gen(function* () {
+      const agent = AgentV2.Info.make({
+        ...AgentV2.Info.empty(AgentV2.ID.make("restricted")),
+        permissions: [{ action: "skill", resource: "*", effect: "deny" }],
+      })
+      const builtin = SkillV2.Info.make({
+        name: "customize-lianvor",
+        description: "Configure Lianvor Runtime",
+        location: AbsolutePath.make("/builtin/customize-lianvor.md"),
+        content: "Canonical built-in",
+      })
+      const external = SkillV2.Info.make({
+        name: "external-skill",
+        description: "External",
+        location: AbsolutePath.make("/skills/external-skill/SKILL.md"),
+        content: "External",
+      })
+
+      expect(SkillV2.available([external, builtin], agent)).toEqual([builtin])
+    }),
   )
 })

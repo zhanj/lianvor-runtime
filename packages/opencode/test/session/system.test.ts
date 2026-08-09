@@ -3,6 +3,7 @@ import { LayerNode } from "@opencode-ai/core/effect/layer-node"
 import { Effect, Layer } from "effect"
 import type { Agent } from "../../src/agent/agent"
 import { NamedError } from "@opencode-ai/core/util/error"
+import { BuiltinSkill } from "@opencode-ai/core/skill/builtin"
 import { Skill } from "../../src/skill"
 import { Permission } from "../../src/permission"
 import { SystemPrompt } from "../../src/session/system"
@@ -18,6 +19,7 @@ const model = (id: string) =>
 const identity = "You are Lianvor, the product assistant."
 
 const skills: Skill.Info[] = [
+  ...BuiltinSkill.all,
   {
     name: "zeta-skill",
     description: "Zeta skill.",
@@ -83,7 +85,16 @@ const it = testEffect(
           },
           all: () => Effect.succeed(skills),
           dirs: () => Effect.succeed([]),
-          available: () => Effect.succeed(skills),
+          available: (agent) =>
+            Effect.succeed(
+              agent
+                ? skills.filter(
+                    (skill) =>
+                      BuiltinSkill.is(skill) ||
+                      Permission.evaluate("skill", skill.name, agent.permission).action !== "deny",
+                  )
+                : skills,
+            ),
         }),
       ),
     ],
@@ -145,6 +156,19 @@ describe("session.system", () => {
       expect(middle).toBeGreaterThan(alpha)
       expect(zeta).toBeGreaterThan(middle)
       expect(output).not.toContain("manual-skill")
+    }),
+  )
+
+  it.effect("skills output retains built-ins when external skills are denied", () =>
+    Effect.gen(function* () {
+      const prompt = yield* SystemPrompt.Service
+      const output = yield* prompt.skills({
+        ...build,
+        permission: Permission.fromConfig({ skill: "deny" }),
+      })
+
+      expect(output).toContain("<name>customize-lianvor</name>")
+      expect(output).not.toContain("<name>alpha-skill</name>")
     }),
   )
 

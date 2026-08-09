@@ -408,6 +408,52 @@ describe("ProviderTransform.options - gpt-5 textVerbosity", () => {
     expect(result.tools.lookup.strict).toBe(false)
   })
 
+  test("skill permission denial keeps the native loader while hiding unrelated denied tools", async () => {
+    const model = createGpt5Model("gpt-5.4")
+    const tool = {
+      description: "Test tool",
+      inputSchema: jsonSchema({ type: "object", properties: {} }),
+    }
+    const result = await Effect.runPromise(
+      LLMRequestPrep.prepare({
+        user: {
+          id: "msg_user-skill-loader",
+          sessionID,
+          role: "user",
+          time: { created: Date.now() },
+          agent: "test",
+          model: { providerID: model.providerID, modelID: model.api.id },
+        } as any,
+        sessionID,
+        model,
+        agent: {
+          name: "test",
+          mode: "primary",
+          options: {},
+          permission: [
+            { permission: "skill", pattern: "*", action: "deny" },
+            { permission: "lookup", pattern: "*", action: "deny" },
+          ],
+        } as any,
+        system: [],
+        messages: [{ role: "user", content: "Hello" }],
+        tools: { skill: tool, lookup: tool },
+        provider: { id: model.providerID, options: {} } as any,
+        auth: undefined,
+        plugin: {
+          trigger: (_name: string, _input: unknown, output: unknown) => Effect.succeed(output),
+          list: () => Effect.succeed([]),
+          init: () => Effect.void,
+        } as any,
+        flags: { outputTokenMax: 32_000, client: "test" } as any,
+        isWorkflow: false,
+      }),
+    )
+
+    expect(result.tools.skill).toBeDefined()
+    expect(result.tools.lookup).toBeUndefined()
+  })
+
   test("gpt-5.1 should have textVerbosity set to low", () => {
     const model = createGpt5Model("gpt-5.1")
     const result = ProviderTransform.options({ model, sessionID, providerOptions: {} })

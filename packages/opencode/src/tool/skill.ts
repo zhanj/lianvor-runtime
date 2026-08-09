@@ -1,6 +1,7 @@
 import path from "path"
 import { Effect, Schema } from "effect"
 import { Ripgrep } from "@opencode-ai/core/ripgrep"
+import { BuiltinSkill } from "@opencode-ai/core/skill/builtin"
 import { Skill } from "../skill"
 import * as Tool from "./tool"
 import DESCRIPTION from "./skill.txt"
@@ -24,23 +25,26 @@ export const SkillTool = Tool.define(
             .require(params.name)
             .pipe(Effect.catchTag("Skill.NotFoundError", (error) => Effect.die(new Error(error.message))))
 
-          yield* ctx.ask({
-            permission: "skill",
-            patterns: [params.name],
-            always: [params.name],
-            metadata: {},
-          })
+          if (!BuiltinSkill.is(info))
+            yield* ctx.ask({
+              permission: "skill",
+              patterns: [params.name],
+              always: [params.name],
+              metadata: {},
+            })
 
           const dir = path.dirname(info.location)
           const base = dir
-          const files = yield* ripgrep.find({
-            cwd: dir,
-            pattern: "!**/SKILL.md",
-            hidden: true,
-            follow: false,
-            signal: ctx.abort,
-            limit: 10,
-          })
+          const files = BuiltinSkill.is(info)
+            ? []
+            : yield* ripgrep.find({
+                cwd: dir,
+                pattern: "!**/SKILL.md",
+                hidden: true,
+                follow: false,
+                signal: ctx.abort,
+                limit: 10,
+              })
 
           return {
             title: `Loaded skill: ${info.name}`,

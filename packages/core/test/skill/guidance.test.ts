@@ -27,6 +27,12 @@ const denied = SkillV2.Info.make({
   location: AbsolutePath.make(path.resolve("/skills/denied/SKILL.md")),
   content: "Denied guidance",
 })
+const builtin = SkillV2.Info.make({
+  name: "customize-lianvor",
+  description: "Configure Lianvor Runtime",
+  location: AbsolutePath.make("/builtin/customize-lianvor.md"),
+  content: "Canonical built-in",
+})
 
 const layer = (list: () => SkillV2.Info[]) =>
   AppNodeBuilder.build(SkillGuidance.node, [
@@ -71,20 +77,19 @@ describe("SkillGuidance", () => {
     }).pipe(Effect.provide(layer(() => skills)))
   })
 
-  it.effect("omits guidance when the selected agent denies all skills", () => {
+  it.effect("keeps built-in guidance when the selected agent denies external skills", () => {
     const agent = AgentV2.Info.make({
       ...AgentV2.Info.empty(build),
       permissions: [{ action: "skill", resource: "*", effect: "deny" }],
     })
     return Effect.gen(function* () {
       const guidance = yield* SkillGuidance.Service
-      expect(
-        yield* guidance.load({ id: agent.id, info: agent }).pipe(Effect.flatMap(SystemContext.initialize)),
-      ).toEqual({
-        baseline: "",
-        snapshot: {},
-      })
-    }).pipe(Effect.provide(layer(() => [effect])))
+      const initialized = yield* guidance
+        .load({ id: agent.id, info: agent })
+        .pipe(Effect.flatMap(SystemContext.initialize))
+      expect(initialized.baseline).toContain("<name>customize-lianvor</name>")
+      expect(initialized.baseline).not.toContain("<name>effect</name>")
+    }).pipe(Effect.provide(layer(() => [effect, builtin])))
   })
 
   it.effect("omits guidance when a resource-specific denial follows the global denial", () => {

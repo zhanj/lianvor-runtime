@@ -86,6 +86,8 @@ Use this skill.
       })).find((item) => item.id === SkillTool.id)
       if (!restrictedTool) throw new Error("Restricted skill tool not found")
       expect(JSON.stringify(restrictedTool.jsonSchema)).not.toContain("tool-skill")
+      expect(JSON.stringify(restrictedTool.jsonSchema)).toContain("customize-lianvor")
+      expect(JSON.stringify(restrictedTool.jsonSchema)).not.toContain("customize-opencode")
 
       const requests: Array<Omit<PermissionV1.Request, "id" | "sessionID" | "tool">> = []
       const ctx: Tool.Context = {
@@ -107,6 +109,12 @@ Use this skill.
       expect(result.output).toContain(`<skill_content name="tool-skill">`)
       expect(result.output).toContain(`Base directory for this skill: ${skill}`)
       expect(result.output).toContain(`<file>${file}</file>`)
+
+      const requestCount = requests.length
+      const builtin = yield* tool.execute({ name: "customize-lianvor" }, ctx)
+      expect(requests.length).toBe(requestCount)
+      expect(builtin.output).toContain(`<skill_content name="customize-lianvor">`)
+      expect(builtin.output).toContain("# Customizing Lianvor Runtime")
     }),
   )
 

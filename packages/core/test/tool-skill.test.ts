@@ -39,7 +39,13 @@ describe("SkillTool", () => {
             location: AbsolutePath.make(location),
             content: "# Effect\n\nGuidance",
           }
-          let current = [info]
+          const builtin = SkillV2.Info.make({
+            name: "customize-lianvor",
+            description: "Configure Lianvor Runtime",
+            location: AbsolutePath.make("/builtin/customize-lianvor.md"),
+            content: "# Customizing Lianvor Runtime",
+          })
+          let current = [info, builtin]
           const assertions: PermissionV2.AssertInput[] = []
           let deny = false
           const permission = Layer.succeed(
@@ -81,6 +87,11 @@ describe("SkillTool", () => {
               description: SkillTool.description,
             })
             expect(
+              (yield* toolDefinitions(registry, [{ action: "skill", resource: "*", effect: "deny" }])).map(
+                (tool) => tool.name,
+              ),
+            ).toContain("skill")
+            expect(
               yield* executeTool(registry, {
                 sessionID,
                 ...toolIdentity,
@@ -105,6 +116,21 @@ describe("SkillTool", () => {
               { sessionID, action: "skill", resources: ["effect"], save: ["effect"] },
               { sessionID, action: "skill", resources: ["effect"], save: ["effect"] },
             ])
+            const assertionCount = assertions.length
+            deny = true
+            expect(
+              yield* executeTool(registry, {
+                sessionID,
+                ...toolIdentity,
+                call: {
+                  type: "tool-call",
+                  id: "call-builtin-skill",
+                  name: "skill",
+                  input: { name: "customize-lianvor" },
+                },
+              }),
+            ).toEqual({ type: "text", value: SkillTool.toModelOutput(builtin, []) })
+            expect(assertions.length).toBe(assertionCount)
             expect(
               yield* executeTool(registry, {
                 sessionID,
@@ -112,7 +138,6 @@ describe("SkillTool", () => {
                 call: { type: "tool-call", id: "call-missing-skill", name: "skill", input: { name: "missing" } },
               }),
             ).toEqual({ type: "error", value: "Unable to load skill missing" })
-            deny = true
             expect(
               yield* executeTool(registry, {
                 sessionID,

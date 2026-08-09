@@ -10,6 +10,7 @@ import { FSUtil } from "./fs-util"
 import { PermissionV2 } from "./permission"
 import { AbsolutePath } from "./schema"
 import { SkillDiscovery } from "./skill/discovery"
+import { BuiltinSkill } from "./skill/builtin"
 import { State } from "./state"
 
 export const DirectorySource = Skill.DirectorySource
@@ -28,7 +29,10 @@ export const Info = Skill.Info
 export type Info = Skill.Info
 
 export const available = (skills: ReadonlyArray<Info>, agent: AgentV2.Info) =>
-  skills.filter((skill) => PermissionV2.evaluate("skill", skill.name, agent.permissions).effect !== "deny")
+  skills.filter(
+    (skill) =>
+      BuiltinSkill.is(skill) || PermissionV2.evaluate("skill", skill.name, agent.permissions).effect !== "deny",
+  )
 
 const Frontmatter = Schema.Struct({
   name: Schema.String.pipe(Schema.optional),
@@ -113,7 +117,18 @@ const layer = Layer.effect(
         const key = Source.key(source)
         const loaded = cache.get(key) ?? (yield* load(source))
         cache.set(key, loaded)
-        for (const skill of loaded) skills.set(skill.name, skill)
+        for (const skill of loaded) {
+          if (source.type !== "embedded" && BuiltinSkill.isName(skill.name)) {
+            yield* Effect.logWarning("external skill cannot replace Runtime built-in", {
+              name: skill.name,
+              location: skill.location,
+            })
+            continue
+          }
+          const existing = skills.get(skill.name)
+          if (existing && BuiltinSkill.is(existing)) continue
+          skills.set(skill.name, skill)
+        }
       }
       return Array.from(skills.values())
     })
