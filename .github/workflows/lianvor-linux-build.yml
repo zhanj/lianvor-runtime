@@ -1,0 +1,85 @@
+name: lianvor-linux-build
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Lianvor Runtime version without the v prefix"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  models-snapshot:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Download models.dev snapshot
+        run: |
+          curl --fail --location --retry 3 --output models-dev-api.json https://models.dev/api.json
+          test -s models-dev-api.json
+          sha256sum models-dev-api.json
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: models-dev-snapshot
+          path: models-dev-api.json
+          if-no-files-found: error
+          retention-days: 30
+
+  build:
+    needs: models-snapshot
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-24.04
+            platform: linux-amd64
+            dist: opencode-linux-x64
+          - runner: ubuntu-24.04-arm
+            platform: linux-arm64
+            dist: opencode-linux-arm64
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@f43a0e5ff2bd294095638e18286ca9a3d1956744 # v3.6.0
+
+      - uses: ./.github/actions/setup-bun
+        with:
+          install-flags: --frozen-lockfile --ignore-scripts
+
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: models-dev-snapshot
+          path: .release-evidence
+
+      - name: Build twice without network access
+        env:
+          OPENCODE_CHANNEL: lianvor
+          OPENCODE_VERSION: ${{ inputs.version }}
+          MODELS_DEV_API_JSON: ${{ github.workspace }}/.release-evidence/models-dev-api.json
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/lianvor-build"
+          for attempt in 1 2; do
+            sudo --preserve-env=HOME,PATH,OPENCODE_CHANNEL,OPENCODE_VERSION,MODELS_DEV_API_JSON \
+              unshare --net -- \
+              bun run --cwd packages/opencode build --single --skip-install --skip-embed-web-ui
+            cp "packages/opencode/dist/${{ matrix.dist }}/bin/opencode" \
+              "$RUNNER_TEMP/lianvor-build/${{ matrix.platform }}.${attempt}"
+          done
+          cmp \
+            "$RUNNER_TEMP/lianvor-build/${{ matrix.platform }}.1" \
+            "$RUNNER_TEMP/lianvor-build/${{ matrix.platform }}.2"
+          install -m 0755 \
+            "$RUNNER_TEMP/lianvor-build/${{ matrix.platform }}.1" \
+            "lianvor-runtime-${{ inputs.version }}-${{ matrix.platform }}"
+          ./"lianvor-runtime-${{ inputs.version }}-${{ matrix.platform }}" --version
+          sha256sum "lianvor-runtime-${{ inputs.version }}-${{ matrix.platform }}"
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: lianvor-runtime-${{ inputs.version }}-${{ matrix.platform }}
+          path: lianvor-runtime-${{ inputs.version }}-${{ matrix.platform }}
+          if-no-files-found: error
+          retention-days: 30
